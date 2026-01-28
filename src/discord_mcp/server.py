@@ -28,37 +28,43 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN environment variable is required")
 
-# Initialize Discord bot with necessary intents
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
+class DiscordMCPClient(discord.Client):
+    def __init__(self):
+        # Enable privileged intents for fetching server members and message content
+        intents = discord.Intents.default()
+        intents.members = True
+        intents.message_content = True
+        super().__init__(intents=intents)
 
-# Initialize MCP server
-app = Server("discord-server")
+    async def on_ready(self):
+        print(f'Logged in as {self.user} (ID: {self.user.id})')
+        print('------')
 
-# Store Discord client reference
-discord_client = None
+discord_client = DiscordMCPClient()
+app = Server("discord-mcp")
 
-@bot.event
-async def on_ready():
-    global discord_client
-    discord_client = bot
-    logger.info(f"Logged in as {bot.user.name}")
+@app.list_resources()
+async def list_resources() -> List[Resource]:
+    """List available Discord resources."""
+    return []
 
-# Helper function to ensure Discord client is ready
-def require_discord_client(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        if not discord_client:
-            raise RuntimeError("Discord client not ready")
-        return await func(*args, **kwargs)
-    return wrapper
+@app.read_resource()
+async def read_resource(uri: Any) -> str:
+    """Read a specific Discord resource."""
+    raise ValueError(f"Resource not found: {uri}")
 
 @app.list_tools()
 async def list_tools() -> List[Tool]:
     """List available Discord tools."""
     return [
+        Tool(
+            name="list_servers",
+            description="Get a list of all Discord servers the bot has access to",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            }
+        ),
         # Server Information Tools
         Tool(
             name="get_server_info",
@@ -89,6 +95,20 @@ async def list_tools() -> List[Tool]:
             }
         ),
         Tool(
+            name="get_user_info",
+            description="Get information about a Discord user",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "Discord user ID"
+                    }
+                },
+                "required": ["user_id"]
+            }
+        ),
+        Tool(
             name="list_members",
             description="Get a list of members in a server",
             inputSchema={
@@ -101,8 +121,7 @@ async def list_tools() -> List[Tool]:
                     "limit": {
                         "type": "number",
                         "description": "Maximum number of members to fetch",
-                        "minimum": 1,
-                        "maximum": 1000
+                        "default": 100
                     }
                 },
                 "required": ["server_id"]
@@ -275,77 +294,7 @@ async def list_tools() -> List[Tool]:
             }
         ),
 
-        # Message Reaction Tools
-        Tool(
-            name="add_reaction",
-            description="Add a reaction to a message",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Channel containing the message"
-                    },
-                    "message_id": {
-                        "type": "string",
-                        "description": "Message to react to"
-                    },
-                    "emoji": {
-                        "type": "string",
-                        "description": "Emoji to react with (Unicode or custom emoji ID)"
-                    }
-                },
-                "required": ["channel_id", "message_id", "emoji"]
-            }
-        ),
-        Tool(
-            name="add_multiple_reactions",
-            description="Add multiple reactions to a message",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Channel containing the message"
-                    },
-                    "message_id": {
-                        "type": "string",
-                        "description": "Message to react to"
-                    },
-                    "emojis": {
-                        "type": "array",
-                        "items": {
-                            "type": "string",
-                            "description": "Emoji to react with (Unicode or custom emoji ID)"
-                        },
-                        "description": "List of emojis to add as reactions"
-                    }
-                },
-                "required": ["channel_id", "message_id", "emojis"]
-            }
-        ),
-        Tool(
-            name="remove_reaction",
-            description="Remove a reaction from a message",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "channel_id": {
-                        "type": "string",
-                        "description": "Channel containing the message"
-                    },
-                    "message_id": {
-                        "type": "string",
-                        "description": "Message to remove reaction from"
-                    },
-                    "emoji": {
-                        "type": "string",
-                        "description": "Emoji to remove (Unicode or custom emoji ID)"
-                    }
-                },
-                "required": ["channel_id", "message_id", "emoji"]
-            }
-        ),
+        # Message Tools
         Tool(
             name="send_message",
             description="Send a message to a specific channel",
@@ -377,27 +326,38 @@ async def list_tools() -> List[Tool]:
                     "limit": {
                         "type": "number",
                         "description": "Number of messages to fetch (max 100)",
-                        "minimum": 1,
-                        "maximum": 100
+                        "default": 50
                     }
                 },
                 "required": ["channel_id"]
             }
         ),
+        
+        # Reaction Tools
         Tool(
-            name="get_user_info",
-            description="Get information about a Discord user",
+            name="add_reaction",
+            description="Add a reaction to a message",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_id": {
+                    "channel_id": {
                         "type": "string",
-                        "description": "Discord user ID"
+                        "description": "Channel containing the message"
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "Message to react to"
+                    },
+                    "emoji": {
+                        "type": "string",
+                        "description": "Emoji to react with (Unicode or custom emoji ID)"
                     }
                 },
-                "required": ["user_id"]
+                "required": ["channel_id", "message_id", "emoji"]
             }
         ),
+        
+        # Moderation Tools
         Tool(
             name="moderate_message",
             description="Delete a message and optionally timeout the user",
@@ -418,31 +378,47 @@ async def list_tools() -> List[Tool]:
                     },
                     "timeout_minutes": {
                         "type": "number",
-                        "description": "Optional timeout duration in minutes",
-                        "minimum": 0,
-                        "maximum": 40320  # Max 4 weeks
+                        "description": "Optional timeout duration in minutes"
                     }
                 },
                 "required": ["channel_id", "message_id", "reason"]
             }
-        ),
-        Tool(
-            name="list_servers",
-            description="Get a list of all Discord servers the bot has access to with their details such as name, id, member count, and creation date.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
         )
     ]
+
+# Helper to verify Discord client connectivity
+def require_discord_client(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        if not discord_client.is_ready():
+            # Try to wait a bit for connection
+            try:
+                await asyncio.wait_for(discord_client.wait_until_ready(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+                
+        if not discord_client.is_ready():
+             return [TextContent(
+                type="text",
+                text="Error: Discord client is not connected. Please check your BOT_TOKEN."
+            )]
+        return await func(*args, **kwargs)
+    return wrapper
 
 @app.call_tool()
 @require_discord_client
 async def call_tool(name: str, arguments: Any) -> List[TextContent]:
     """Handle Discord tool calls."""
-    
-    if name == "send_message":
+    if name == "list_servers":
+        servers = []
+        for guild in discord_client.guilds:
+            servers.append(f"{guild.name} (ID: {guild.id}) - Members: {guild.member_count}")
+        return [TextContent(
+            type="text",
+            text="Connected Servers:\n" + "\n".join(servers)
+        )]
+
+    elif name == "send_message":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         message = await channel.send(arguments["content"])
         return [TextContent(
@@ -452,57 +428,42 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
 
     elif name == "read_messages":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
-        limit = min(int(arguments.get("limit", 10)), 100)
-        fetch_users = arguments.get("fetch_reaction_users", False)  # Only fetch users if explicitly requested
+        limit = min(int(arguments.get("limit", 50)), 100)
         messages = []
         async for message in channel.history(limit=limit):
-            reaction_data = []
-            for reaction in message.reactions:
-                emoji_str = str(reaction.emoji.name) if hasattr(reaction.emoji, 'name') and reaction.emoji.name else str(reaction.emoji.id) if hasattr(reaction.emoji, 'id') else str(reaction.emoji)
-                reaction_info = {
-                    "emoji": emoji_str,
-                    "count": reaction.count
-                }
-                logger.error(f"Emoji: {emoji_str}")
-                reaction_data.append(reaction_info)
             messages.append({
                 "id": str(message.id),
                 "author": str(message.author),
                 "content": message.content,
-                "timestamp": message.created_at.isoformat(),
-                "reactions": reaction_data  # Add reactions to message dict
+                "timestamp": format_dt(message.created_at),
             })
-        # Helper function to format reactions
-        def format_reaction(r):
-            return f"{r['emoji']}({r['count']})"
             
         return [TextContent(
             type="text",
             text=f"Retrieved {len(messages)} messages:\n\n" + 
                  "\n".join([
-                     f"{m['author']} ({m['timestamp']}): {m['content']}\n" +
-                     f"Reactions: {', '.join([format_reaction(r) for r in m['reactions']]) if m['reactions'] else 'No reactions'}"
+                     f"{m['author']} ({m['timestamp']}): {m['content']}"
                      for m in messages
                  ])
         )]
 
     elif name == "get_user_info":
-        user = await discord_client.fetch_user(int(arguments["user_id"]))
-        user_info = {
-            "id": str(user.id),
-            "name": user.name,
-            "discriminator": user.discriminator,
-            "bot": user.bot,
-            "created_at": user.created_at.isoformat()
-        }
-        return [TextContent(
-            type="text",
-            text=f"User information:\n" + 
-                 f"Name: {user_info['name']}#{user_info['discriminator']}\n" +
-                 f"ID: {user_info['id']}\n" +
-                 f"Bot: {user_info['bot']}\n" +
-                 f"Created: {user_info['created_at']}"
-        )]
+        user_id = int(arguments["user_id"])
+        user = discord_client.get_user(user_id)
+        if not user:
+            try:
+                user = await discord_client.fetch_user(user_id)
+            except discord.NotFound:
+                return [TextContent(type="text", text="User not found")]
+        
+        info = [
+            f"Username: {user.name}",
+            f"Display Name: {user.display_name}",
+            f"ID: {user.id}",
+            f"Bot: {user.bot}",
+            f"Created At: {format_dt(user.created_at)}"
+        ]
+        return [TextContent(type="text", text="\n".join(info))]
 
     elif name == "moderate_message":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
@@ -514,11 +475,11 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         # Handle timeout if specified
         if "timeout_minutes" in arguments and arguments["timeout_minutes"] > 0:
             if isinstance(message.author, discord.Member):
-                duration = discord.utils.utcnow() + datetime.timedelta(
-                    minutes=arguments["timeout_minutes"]
-                )
+                duration = arguments["timeout_minutes"]
+                # Discord timeout expects a timedelta object
+                timeout_duration = datetime.timedelta(minutes=duration)
                 await message.author.timeout(
-                    duration,
+                    timeout_duration,
                     reason=arguments["reason"]
                 )
                 return [TextContent(
@@ -533,57 +494,64 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
 
     # Server Information Tools
     elif name == "get_server_info":
-        guild = await discord_client.fetch_guild(int(arguments["server_id"]))
-        info = {
-            "name": guild.name,
-            "id": str(guild.id),
-            "owner_id": str(guild.owner_id),
-            "member_count": guild.member_count,
-            "created_at": guild.created_at.isoformat(),
-            "description": guild.description,
-            "premium_tier": guild.premium_tier,
-            "explicit_content_filter": str(guild.explicit_content_filter)
-        }
-        return [TextContent(
-            type="text",
-            text=f"Server Information:\n" + "\n".join(f"{k}: {v}" for k, v in info.items())
-        )]
+        guild = discord_client.get_guild(int(arguments["server_id"]))
+        if not guild:
+            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            
+        info = [
+            f"Server Name: {guild.name}",
+            f"ID: {guild.id}",
+            f"Owner: {guild.owner}",
+            f"Created At: {format_dt(guild.created_at)}",
+            f"Member Count: {guild.member_count}",
+            f"Verification Level: {guild.verification_level}",
+            f"Roles: {len(guild.roles)}",
+            f"Channels: {len(guild.channels)}"
+        ]
+        return [TextContent(type="text", text="\n".join(info))]
 
     elif name == "get_channels":
         try:
             guild = discord_client.get_guild(int(arguments["server_id"]))
-            if guild:
-                channel_list = []
-                for channel in guild.channels:
-                    channel_list.append(f"#{channel.name} (ID: {channel.id}) - {channel.type}")
-                
-                return [TextContent(
-                    type="text", 
-                    text=f"Channels in {guild.name}:\n" + "\n".join(channel_list)
-                )]
-            else:
-                return [TextContent(type="text", text="Guild not found")]
+            if not guild:
+                guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            
+            channel_list = []
+            for channel in guild.channels:
+                channel_list.append(f"#{channel.name} (ID: {channel.id}) - {channel.type}")
+            
+            return [TextContent(
+                type="text", 
+                text=f"Channels in {guild.name}:\n" + "\n".join(channel_list)
+            )]
         except Exception as e:
             return [TextContent(type="text", text=f"Error: {str(e)}")]
 
     elif name == "list_members":
-        guild = await discord_client.fetch_guild(int(arguments["server_id"]))
-        limit = min(int(arguments.get("limit", 100)), 1000)
-        
+        guild = discord_client.get_guild(int(arguments["server_id"]))
+        if not guild:
+            # Note: list_members might fail if privileged intents are not enabled
+            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            
+        limit = arguments.get("limit", 100)
         members = []
-        async for member in guild.fetch_members(limit=limit):
-            members.append({
-                "id": str(member.id),
-                "name": member.name,
-                "nick": member.nick,
-                "joined_at": member.joined_at.isoformat() if member.joined_at else None,
-                "roles": [str(role.id) for role in member.roles[1:]]  # Skip @everyone
-            })
         
+        # async interator for large lists if needed, but guild.members is cached if intents enabled
+        # If cache is empty, we might need fetch_members
+        if not guild.members:
+            async for member in guild.fetch_members(limit=limit):
+                members.append(member)
+        else:
+             members = guild.members[:limit]
+
+        member_list = []
+        for m in members:
+            roles = [r.name for r in m.roles if r.name != "@everyone"]
+            member_list.append(f"{m.name} (ID: {m.id}) - Roles: {', '.join(roles)}")
+            
         return [TextContent(
             type="text",
-            text=f"Server Members ({len(members)}):\n" + 
-                 "\n".join(f"{m['name']} (ID: {m['id']}, Roles: {', '.join(m['roles'])})" for m in members)
+            text=f"Members in {guild.name} (First {len(member_list)}):\n" + "\n".join(member_list)
         )]
 
     elif name == "list_roles":
@@ -630,7 +598,7 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
             "managed": role.managed,
             "permissions_value": str(role.permissions.value),
             "permissions_list": ", ".join(enabled_permissions) if enabled_permissions else "None",
-            "created_at": role.created_at.isoformat()
+            "created_at": format_dt(role.created_at)
         }
         
         return [TextContent(
@@ -661,7 +629,7 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                 "type": str(channel.type),
                 "category": channel.category.name if channel.category else "None",
                 "position": channel.position,
-                "created_at": channel.created_at.isoformat()
+                "created_at": format_dt(channel.created_at)
             }
             
             if isinstance(channel, discord.TextChannel):
@@ -671,6 +639,9 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
             elif isinstance(channel, discord.VoiceChannel):
                 info["bitrate"] = f"{channel.bitrate/1000}kbps"
                 info["user_limit"] = channel.user_limit or "Unlimited"
+                # Add connected members
+                connected_members = [f"{m.name} ({m.display_name})" for m in channel.members]
+                info["connected_members"] = ", ".join(connected_members) if connected_members else "None"
             
             return [TextContent(
                 type="text",
@@ -692,12 +663,7 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                 if action_type and action_type.lower() not in str(entry.action).lower():
                     continue
                     
-                changes_str = ""
-                # Simple changes formatting
-                if hasattr(entry, 'changes'):
-                     changes_str = f" | Changes: {len(entry.changes)} items"
-
-                entries.append(f"[{entry.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {entry.user.name}: {str(entry.action).replace('AuditLogAction.', '')} -> {entry.target} {changes_str}")
+                entries.append(f"[{format_dt(entry.created_at)}] {entry.user.name}: {str(entry.action).replace('AuditLogAction.', '')} -> {entry.target}")
 
             return [TextContent(
                 type="text",

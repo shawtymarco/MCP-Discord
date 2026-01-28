@@ -42,8 +42,24 @@ Add the following configuration to your MCP client (e.g., Claude Desktop or Anti
 
 - **Path for Windows (Claude):** `%APPDATA%\Claude\claude_desktop_config.json`
 - **Path for Antigravity:** `~/.gemini/antigravity/mcp_config.json`
-- **Path for Kiro:** `C:\Users\Admin\.kiro\settings\mcp.json`
+- **Path for Kiro:**  - `c:\Users\Admin\.kiro\settings\mcp.json` (Kiro)
 
+### Configuration (`config.yaml`)
+
+This server uses a `config.yaml` file for custom settings like **Timezone**.
+
+1. Create a `config.yaml` file in your project directory (or use the provided default).
+2. Add your settings:
+   ```yaml
+   # Example: Set timezone to South Korea
+   timezone: "Asia/Seoul"
+   ```
+3. **Mount this file** when running via Docker (already configured in `mcp_config.json`):
+   ```bash
+   docker run -v /path/to/config.yaml:/app/config.yaml ...
+   ```
+
+### Docker Setup
 ```json
 {
   "mcpServers": {

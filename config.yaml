@@ -1,0 +1,5 @@
+# Discord MCP Configuration
+
+# Timezone for displaying timestamps (e.g., 'UTC', 'Asia/Seoul', 'America/New_York')
+# You can find a list of timezones here: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+timezone: "Asia/Seoul"
