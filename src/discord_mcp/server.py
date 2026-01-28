@@ -140,6 +140,48 @@ async def list_tools() -> List[Tool]:
                 "required": ["server_id", "role_id"]
             }
         ),
+        Tool(
+            name="inspect_channel",
+            description="Get detailed information about a channel, including permission overwrites",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "server_id": {
+                        "type": "string",
+                        "description": "Discord server (guild) ID"
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "Discord channel ID"
+                    }
+                },
+                "required": ["server_id", "channel_id"]
+            }
+        ),
+        Tool(
+            name="get_audit_log",
+            description="Get recent audit log entries from the server",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "server_id": {
+                        "type": "string",
+                        "description": "Discord server (guild) ID"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Number of entries to fetch (max 100)",
+                        "minimum": 1,
+                        "maximum": 100
+                    },
+                    "action_type": {
+                        "type": "string",
+                        "description": "Optional filter for action type (e.g. 'member_update', 'message_delete')"
+                    }
+                },
+                "required": ["server_id"]
+            }
+        ),
 
         # Role Management Tools
         Tool(
@@ -574,6 +616,9 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         role = guild.get_role(int(arguments["role_id"]))
         if not role:
             return [TextContent(type="text", text="Role not found")]
+
+        # Get enabled permissions
+        enabled_permissions = [perm[0] for perm in role.permissions if perm[1]]
             
         role_info = {
             "name": role.name,
@@ -583,7 +628,8 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
             "mentionable": role.mentionable,
             "hoist": role.hoist,
             "managed": role.managed,
-            "permissions": str(role.permissions.value),
+            "permissions_value": str(role.permissions.value),
+            "permissions_list": ", ".join(enabled_permissions) if enabled_permissions else "None",
             "created_at": role.created_at.isoformat()
         }
         
@@ -592,6 +638,73 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
             text=f"Role Information for '{role.name}':\n" + 
                  "\n".join(f"{k}: {v}" for k, v in role_info.items())
         )]
+
+    elif name == "inspect_channel":
+        try:
+            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            channel = await guild.fetch_channel(int(arguments["channel_id"]))
+            
+            overwrites = []
+            for target, overwrite in channel.overwrites.items():
+                target_type = "Role" if isinstance(target, discord.Role) else "Member"
+                target_name = target.name
+                
+                allow = [perm[0] for perm in overwrite if perm[1] is True]
+                deny = [perm[0] for perm in overwrite if perm[1] is False]
+                
+                if allow or deny:
+                    overwrites.append(f"\n  {target_type} '{target_name}':\n    Allowed: {', '.join(allow) or 'None'}\n    Denied: {', '.join(deny) or 'None'}")
+
+            info = {
+                "name": channel.name,
+                "id": str(channel.id),
+                "type": str(channel.type),
+                "category": channel.category.name if channel.category else "None",
+                "position": channel.position,
+                "created_at": channel.created_at.isoformat()
+            }
+            
+            if isinstance(channel, discord.TextChannel):
+                info["topic"] = channel.topic or "None"
+                info["nsfw"] = channel.nsfw
+                info["slowmode_delay"] = f"{channel.slowmode_delay}s"
+            elif isinstance(channel, discord.VoiceChannel):
+                info["bitrate"] = f"{channel.bitrate/1000}kbps"
+                info["user_limit"] = channel.user_limit or "Unlimited"
+            
+            return [TextContent(
+                type="text",
+                text=f"Channel Information for '#{channel.name}':\n" + 
+                     "\n".join(f"{k}: {v}" for k, v in info.items()) +
+                     f"\n\nPermission Overwrites:{''.join(overwrites) if overwrites else ' None'}"
+            )]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error inspecting channel: {str(e)}")]
+
+    elif name == "get_audit_log":
+        try:
+            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            limit = min(int(arguments.get("limit", 20)), 100)
+            action_type = arguments.get("action_type") # Optional filter
+            
+            entries = []
+            async for entry in guild.audit_logs(limit=limit):
+                if action_type and action_type.lower() not in str(entry.action).lower():
+                    continue
+                    
+                changes_str = ""
+                # Simple changes formatting
+                if hasattr(entry, 'changes'):
+                     changes_str = f" | Changes: {len(entry.changes)} items"
+
+                entries.append(f"[{entry.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {entry.user.name}: {str(entry.action).replace('AuditLogAction.', '')} -> {entry.target} {changes_str}")
+
+            return [TextContent(
+                type="text",
+                text=f"Audit Log (Last {len(entries)} entries):\n" + "\n".join(entries)
+            )]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error fetching audit log: {str(e)}")]
 
     # Role Management Tools
     elif name == "add_role":

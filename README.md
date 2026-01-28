@@ -6,10 +6,14 @@ This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-dis
 
 ## Available Tools
 
-### 🛡️ Role & Member Management (New)
+### 🛡️ Role & Member Management
 - `list_roles`: List all roles in a server with their IDs and positions.
 - `inspect_role`: Get detailed metadata for a specific role (permissions, color, etc.).
 - `list_members`: List server members and their assigned roles.
+
+### 📺 Channel & Permission Management (New)
+- `inspect_channel`: View channel details and permission overwrites.
+- `get_audit_log`: JSON viewing of recent server audit logs (actions like bans, role changes).
 
 ### 📊 Server Information
 - `list_servers`: List all servers the bot has access to.
