@@ -4,6 +4,10 @@ A Model Context Protocol (MCP) server that provides Discord integration capabili
 
 This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-discord) with added features and simplified containerization.
 
+## ✨ Recent Updates
+
+- **v1.1.0** (2026-02-04): Updated MCP SDK to v1.0.0+ to resolve `Resource` import errors and improve compatibility with latest MCP clients
+
 ## Available Tools
 
 ### 🛡️ Role & Member Management
