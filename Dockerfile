@@ -6,7 +6,7 @@ COPY pyproject.toml .
 COPY README.md .
 COPY src/ ./src/
 
-RUN pip install --no-cache-dir discord.py mcp PyYAML
+RUN pip install --no-cache-dir discord.py "mcp>=1.0.0" PyYAML
 
 ENV PYTHONPATH=/app/src
 

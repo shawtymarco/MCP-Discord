@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import sys
 import asyncio
@@ -8,7 +9,7 @@ from functools import wraps
 import discord
 from discord.ext import commands
 from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, Resource
 from mcp.server.stdio import stdio_server
 
 def _configure_windows_stdout_encoding():
@@ -22,6 +23,11 @@ _configure_windows_stdout_encoding()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("discord-mcp-server")
+
+# Helper function to format datetime
+def format_dt(dt: datetime) -> str:
+    """Format datetime to readable string"""
+    return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 # Discord bot setup
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -44,7 +50,7 @@ discord_client = DiscordMCPClient()
 app = Server("discord-mcp")
 
 @app.list_resources()
-async def list_resources() -> List[Resource]:
+async def list_resources() -> List["Resource"]:
     """List available Discord resources."""
     return []
 
@@ -54,7 +60,7 @@ async def read_resource(uri: Any) -> str:
     raise ValueError(f"Resource not found: {uri}")
 
 @app.list_tools()
-async def list_tools() -> List[Tool]:
+async def list_tools() -> List["Tool"]:
     """List available Discord tools."""
     return [
         Tool(
@@ -771,7 +777,7 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
 
 async def main():
     # Start Discord bot in the background
-    asyncio.create_task(bot.start(DISCORD_TOKEN))
+    asyncio.create_task(discord_client.start(DISCORD_TOKEN))
     
     # Run MCP server
     async with stdio_server() as (read_stream, write_stream):
