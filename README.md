@@ -6,6 +6,7 @@ This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-dis
 
 ## ✨ Recent Updates
 
+- **v1.2.0** (2026-02-05): Added support for reading forwarded messages (Message Snapshots) and detailed embed information (titles, fields, descriptions) in `read_messages`.
 - **v1.1.0** (2026-02-04): Updated MCP SDK to v1.0.0+ to resolve `Resource` import errors and improve compatibility with latest MCP clients
 
 ## Available Tools
