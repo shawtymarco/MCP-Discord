@@ -389,6 +389,14 @@ async def list_tools() -> List["Tool"]:
                 },
                 "required": ["channel_id", "message_id", "reason"]
             }
+        ),
+        Tool(
+            name="test_reload",
+            description="A test tool to verify if the MCP server has reloaded.",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            }
         )
     ]
 
@@ -437,20 +445,78 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         limit = min(int(arguments.get("limit", 50)), 100)
         messages = []
         async for message in channel.history(limit=limit):
-            messages.append({
+            msg_data = {
                 "id": str(message.id),
                 "author": str(message.author),
                 "content": message.content,
                 "timestamp": format_dt(message.created_at),
-            })
+                "type": str(message.type),
+                "attachments": [str(a.url) for a in message.attachments],
+                "embeds": []
+            }
             
+            for embed in message.embeds:
+                embed_data = {}
+                if embed.title: embed_data["title"] = embed.title
+                if embed.description: embed_data["description"] = embed.description
+                if embed.fields:
+                    embed_data["fields"] = [{"name": f.name, "value": f.value, "inline": f.inline} for f in embed.fields]
+                if embed.footer: embed_data["footer"] = embed.footer.text
+                if embed.author: embed_data["author"] = embed.author.name
+                msg_data["embeds"].append(embed_data)
+
+            # Check for Snapshots (Forwarded Messages)
+            # discord.py currently doesn't expose snapshots in the message object easily in all versions,
+            # so we fetch the raw message data from the HTTP client.
+            try:
+                raw_msg = await discord_client.http.get_message(int(arguments["channel_id"]), message.id)
+                if 'message_snapshots' in raw_msg:
+                    for i, snapshot in enumerate(raw_msg['message_snapshots']):
+                        snap_msg = snapshot.get('message', {})
+                        snap_data = {
+                            "content": snap_msg.get('content', ""),
+                            "embeds": []
+                        }
+                        for e in snap_msg.get('embeds', []):
+                            snap_embed = {}
+                            if e.get('title'): snap_embed['title'] = e['title']
+                            if e.get('description'): snap_embed['description'] = e['description']
+                            if e.get('fields'):
+                                snap_embed['fields'] = [{"name": f['name'], "value": f['value']} for f in e['fields']]
+                            snap_data["embeds"].append(snap_embed)
+                        msg_data["embeds"].append({"title": f"Forwarded Message {i+1}", "description": snap_data["content"], "snapshots": snap_data})
+            except Exception:
+                pass
+                
+            messages.append(msg_data)
+            
+        output = [f"Retrieved {len(messages)} messages:"]
+        for m in messages:
+            msg_text = f"{m['author']} ({m['timestamp']}): {m['content']}"
+            if m['embeds']:
+                for i, embed in enumerate(m['embeds']):
+                    msg_text += f"\n  [Embed {i+1}]"
+                    if 'title' in embed: msg_text += f"\n    Title: {embed['title']}"
+                    if 'description' in embed: msg_text += f"\n    Description: {embed['description']}"
+                    if 'fields' in embed:
+                        for field in embed['fields']:
+                            msg_text += f"\n    Field: {field['name']} = {field['value']}"
+                    if 'snapshots' in embed:
+                        snap = embed['snapshots']
+                        for j, snap_embed in enumerate(snap['embeds']):
+                            msg_text += f"\n    [Forwarded Embed {j+1}]"
+                            if 'title' in snap_embed: msg_text += f"\n      Title: {snap_embed['title']}"
+                            if 'fields' in snap_embed:
+                                for f in snap_embed['fields']:
+                                    msg_text += f"\n      Field: {f['name']} = {f['value']}"
+            if m['attachments']:
+                msg_text += f"\n  Attachments: {', '.join(m['attachments'])}"
+            msg_text += f"\n  Type: {m['type']}"
+            output.append(msg_text)
+
         return [TextContent(
             type="text",
-            text=f"Retrieved {len(messages)} messages:\n\n" + 
-                 "\n".join([
-                     f"{m['author']} ({m['timestamp']}): {m['content']}"
-                     for m in messages
-                 ])
+            text="\n\n".join(output)
         )]
 
     elif name == "get_user_info":
