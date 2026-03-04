@@ -504,23 +504,6 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                     if embed.author: embed_data["author"] = embed.author.name
                     msg_data["embeds"].append(embed_data)
 
-                try:
-                    raw_msg = await discord_client.http.get_message(int(arguments["channel_id"]), message.id)
-                    if 'message_snapshots' in raw_msg:
-                        for i, snapshot in enumerate(raw_msg['message_snapshots']):
-                            snap_msg = snapshot.get('message', {})
-                            snap_data = {"content": snap_msg.get('content', ""), "embeds": []}
-                            for e in snap_msg.get('embeds', []):
-                                snap_embed = {}
-                                if e.get('title'): snap_embed['title'] = e['title']
-                                if e.get('description'): snap_embed['description'] = e['description']
-                                if e.get('fields'):
-                                    snap_embed['fields'] = [{"name": f['name'], "value": f['value']} for f in e['fields']]
-                                snap_data["embeds"].append(snap_embed)
-                            msg_data["embeds"].append({"title": f"Forwarded Message {i+1}", "description": snap_data["content"], "snapshots": snap_data})
-                except Exception:
-                    pass
-
                 messages.append(msg_data)
 
         output = [f"Retrieved {len(messages)} messages:"]
