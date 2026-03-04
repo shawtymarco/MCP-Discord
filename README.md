@@ -6,6 +6,7 @@ This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-dis
 
 ## ✨ Recent Updates
 
+- **v1.3.0** (2026-03-05): Enhanced `read_messages` with reaction information including custom emoji details (ID, name, animated status).
 - **v1.2.0** (2026-02-05): Added support for reading forwarded messages (Message Snapshots) and detailed embed information (titles, fields, descriptions) in `read_messages`.
 - **v1.1.0** (2026-02-04): Updated MCP SDK to v1.0.0+ to resolve `Resource` import errors and improve compatibility with latest MCP clients
 
@@ -28,7 +29,7 @@ This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-dis
 
 ### 💬 Messaging & Moderation
 - `send_message`: Send a message to a channel.
-- `read_messages`: Read recent history and reactions.
+- `read_messages`: Read recent history, reactions (including custom emoji details), and embeds.
 - `add_reaction` / `remove_reaction`: Manage message reactions.
 - `moderate_message`: Delete messages and timeout users.
 

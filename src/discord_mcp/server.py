@@ -445,6 +445,26 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         limit = min(int(arguments.get("limit", 50)), 100)
         messages = []
         async for message in channel.history(limit=limit):
+            # Collect reaction information
+            reactions = []
+            for reaction in message.reactions:
+                emoji_data = {
+                    "emoji": str(reaction.emoji),
+                    "count": reaction.count,
+                    "me": reaction.me
+                }
+                
+                # Add custom emoji details if available
+                if isinstance(reaction.emoji, discord.PartialEmoji) or isinstance(reaction.emoji, discord.Emoji):
+                    emoji_data["is_custom"] = True
+                    emoji_data["emoji_id"] = str(reaction.emoji.id) if reaction.emoji.id else None
+                    emoji_data["emoji_name"] = reaction.emoji.name
+                    emoji_data["animated"] = getattr(reaction.emoji, 'animated', False)
+                else:
+                    emoji_data["is_custom"] = False
+                    
+                reactions.append(emoji_data)
+            
             msg_data = {
                 "id": str(message.id),
                 "author": str(message.author),
@@ -452,6 +472,7 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                 "timestamp": format_dt(message.created_at),
                 "type": str(message.type),
                 "attachments": [str(a.url) for a in message.attachments],
+                "reactions": reactions,
                 "embeds": []
             }
             
@@ -493,6 +514,14 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         output = [f"Retrieved {len(messages)} messages:"]
         for m in messages:
             msg_text = f"{m['author']} ({m['timestamp']}): {m['content']}"
+            if m['reactions']:
+                reaction_parts = []
+                for r in m['reactions']:
+                    if r.get('is_custom'):
+                        reaction_parts.append(f":{r['emoji_name']}: (ID: {r['emoji_id']}, Count: {r['count']})")
+                    else:
+                        reaction_parts.append(f"{r['emoji']} ({r['count']})")
+                msg_text += f"\n  Reactions: {', '.join(reaction_parts)}"
             if m['embeds']:
                 for i, embed in enumerate(m['embeds']):
                     msg_text += f"\n  [Embed {i+1}]"
