@@ -331,7 +331,7 @@ async def list_tools() -> List["Tool"]:
                     },
                     "limit": {
                         "type": "number",
-                        "description": "Number of messages to fetch (max 100)",
+                        "description": "Number of messages to fetch (max 1000)",
                         "default": 50
                     }
                 },
@@ -442,75 +442,87 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
 
     elif name == "read_messages":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
-        limit = min(int(arguments.get("limit", 50)), 100)
+        limit = min(int(arguments.get("limit", 50)), 1000)
         messages = []
-        async for message in channel.history(limit=limit):
-            # Collect reaction information
-            reactions = []
-            for reaction in message.reactions:
-                emoji_data = {
-                    "emoji": str(reaction.emoji),
-                    "count": reaction.count,
-                    "me": reaction.me
-                }
-                
-                # Add custom emoji details if available
-                if isinstance(reaction.emoji, discord.PartialEmoji) or isinstance(reaction.emoji, discord.Emoji):
-                    emoji_data["is_custom"] = True
-                    emoji_data["emoji_id"] = str(reaction.emoji.id) if reaction.emoji.id else None
-                    emoji_data["emoji_name"] = reaction.emoji.name
-                    emoji_data["animated"] = getattr(reaction.emoji, 'animated', False)
-                else:
-                    emoji_data["is_custom"] = False
-                    
-                reactions.append(emoji_data)
-            
-            msg_data = {
-                "id": str(message.id),
-                "author": str(message.author),
-                "content": message.content,
-                "timestamp": format_dt(message.created_at),
-                "type": str(message.type),
-                "attachments": [str(a.url) for a in message.attachments],
-                "reactions": reactions,
-                "embeds": []
-            }
-            
-            for embed in message.embeds:
-                embed_data = {}
-                if embed.title: embed_data["title"] = embed.title
-                if embed.description: embed_data["description"] = embed.description
-                if embed.fields:
-                    embed_data["fields"] = [{"name": f.name, "value": f.value, "inline": f.inline} for f in embed.fields]
-                if embed.footer: embed_data["footer"] = embed.footer.text
-                if embed.author: embed_data["author"] = embed.author.name
-                msg_data["embeds"].append(embed_data)
+        # Discord API max per request is 100, so batch if needed
+        batch_size = 100
+        last_message_id = None
+        remaining = limit
 
-            # Check for Snapshots (Forwarded Messages)
-            # discord.py currently doesn't expose snapshots in the message object easily in all versions,
-            # so we fetch the raw message data from the HTTP client.
-            try:
-                raw_msg = await discord_client.http.get_message(int(arguments["channel_id"]), message.id)
-                if 'message_snapshots' in raw_msg:
-                    for i, snapshot in enumerate(raw_msg['message_snapshots']):
-                        snap_msg = snapshot.get('message', {})
-                        snap_data = {
-                            "content": snap_msg.get('content', ""),
-                            "embeds": []
-                        }
-                        for e in snap_msg.get('embeds', []):
-                            snap_embed = {}
-                            if e.get('title'): snap_embed['title'] = e['title']
-                            if e.get('description'): snap_embed['description'] = e['description']
-                            if e.get('fields'):
-                                snap_embed['fields'] = [{"name": f['name'], "value": f['value']} for f in e['fields']]
-                            snap_data["embeds"].append(snap_embed)
-                        msg_data["embeds"].append({"title": f"Forwarded Message {i+1}", "description": snap_data["content"], "snapshots": snap_data})
-            except Exception:
-                pass
-                
-            messages.append(msg_data)
-            
+        while remaining > 0:
+            fetch_count = min(remaining, batch_size)
+            kwargs = {"limit": fetch_count}
+            if last_message_id:
+                kwargs["before"] = discord.Object(id=last_message_id)
+
+            batch = []
+            async for message in channel.history(**kwargs):
+                batch.append(message)
+
+            if not batch:
+                break
+
+            last_message_id = batch[-1].id
+            remaining -= len(batch)
+
+            for message in batch:
+                # Collect reaction information
+                reactions = []
+                for reaction in message.reactions:
+                    emoji_data = {
+                        "emoji": str(reaction.emoji),
+                        "count": reaction.count,
+                        "me": reaction.me
+                    }
+                    if isinstance(reaction.emoji, discord.PartialEmoji) or isinstance(reaction.emoji, discord.Emoji):
+                        emoji_data["is_custom"] = True
+                        emoji_data["emoji_id"] = str(reaction.emoji.id) if reaction.emoji.id else None
+                        emoji_data["emoji_name"] = reaction.emoji.name
+                        emoji_data["animated"] = getattr(reaction.emoji, 'animated', False)
+                    else:
+                        emoji_data["is_custom"] = False
+                    reactions.append(emoji_data)
+
+                msg_data = {
+                    "id": str(message.id),
+                    "author": str(message.author),
+                    "content": message.content,
+                    "timestamp": format_dt(message.created_at),
+                    "type": str(message.type),
+                    "attachments": [str(a.url) for a in message.attachments],
+                    "reactions": reactions,
+                    "embeds": []
+                }
+
+                for embed in message.embeds:
+                    embed_data = {}
+                    if embed.title: embed_data["title"] = embed.title
+                    if embed.description: embed_data["description"] = embed.description
+                    if embed.fields:
+                        embed_data["fields"] = [{"name": f.name, "value": f.value, "inline": f.inline} for f in embed.fields]
+                    if embed.footer: embed_data["footer"] = embed.footer.text
+                    if embed.author: embed_data["author"] = embed.author.name
+                    msg_data["embeds"].append(embed_data)
+
+                try:
+                    raw_msg = await discord_client.http.get_message(int(arguments["channel_id"]), message.id)
+                    if 'message_snapshots' in raw_msg:
+                        for i, snapshot in enumerate(raw_msg['message_snapshots']):
+                            snap_msg = snapshot.get('message', {})
+                            snap_data = {"content": snap_msg.get('content', ""), "embeds": []}
+                            for e in snap_msg.get('embeds', []):
+                                snap_embed = {}
+                                if e.get('title'): snap_embed['title'] = e['title']
+                                if e.get('description'): snap_embed['description'] = e['description']
+                                if e.get('fields'):
+                                    snap_embed['fields'] = [{"name": f['name'], "value": f['value']} for f in e['fields']]
+                                snap_data["embeds"].append(snap_embed)
+                            msg_data["embeds"].append({"title": f"Forwarded Message {i+1}", "description": snap_data["content"], "snapshots": snap_data})
+                except Exception:
+                    pass
+
+                messages.append(msg_data)
+
         output = [f"Retrieved {len(messages)} messages:"]
         for m in messages:
             msg_text = f"{m['author']} ({m['timestamp']}): {m['content']}"
