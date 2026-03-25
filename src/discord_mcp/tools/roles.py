@@ -43,41 +43,44 @@ TOOL_DEFINITIONS: List[Tool] = [
 
 async def handle(name: str, arguments: Any) -> List[TextContent] | None:
     if name == "reorder_roles":
-        guild = discord_client.get_guild(int(arguments["server_id"]))
-        if not guild:
-            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+        try:
+            guild = discord_client.get_guild(int(arguments["server_id"]))
+            if not guild:
+                guild = await discord_client.fetch_guild(int(arguments["server_id"]))
 
-        # Force-fetch all roles to populate cache
-        all_roles = await guild.fetch_roles()
-        role_map = {r.id: r for r in all_roles}
+            # Force-fetch all roles to populate cache
+            all_roles = await guild.fetch_roles()
+            role_map = {r.id: r for r in all_roles}
 
-        positions = arguments["positions"]
+            positions = arguments["positions"]
 
-        role_positions: dict[Any, int] = {}
-        not_found: list[str] = []
+            role_positions: dict[Any, int] = {}
+            not_found: list[str] = []
 
-        for entry in positions:
-            role = role_map.get(int(entry["role_id"]))
-            if not role:
-                not_found.append(entry["role_id"])
-                continue
-            role_positions[role] = int(entry["position"])
+            for entry in positions:
+                role = role_map.get(int(entry["role_id"]))
+                if not role:
+                    not_found.append(entry["role_id"])
+                    continue
+                role_positions[role] = int(entry["position"])
 
-        if not_found:
-            return [TextContent(
-                type="text",
-                text=f"Role(s) not found: {', '.join(not_found)}",
-            )]
+            if not_found:
+                return [TextContent(
+                    type="text",
+                    text=f"Role(s) not found: {', '.join(not_found)}",
+                )]
 
-        await guild.edit_role_positions(
-            positions=role_positions,
-            reason="Role positions updated via MCP",
-        )
+            await guild.edit_role_positions(
+                positions=role_positions,
+                reason="Role positions updated via MCP",
+            )
 
-        result_lines = [f"Role positions updated in '{guild.name}':"]
-        for role, pos in role_positions.items():
-            result_lines.append(f"  {role.name} (ID: {role.id}) → position {pos}")
+            result_lines = [f"Role positions updated in '{guild.name}':"]
+            for role, pos in role_positions.items():
+                result_lines.append(f"  {role.name} (ID: {role.id}) → position {pos}")
 
-        return [TextContent(type="text", text="\n".join(result_lines))]
+            return [TextContent(type="text", text="\n".join(result_lines))]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error: {type(e).__name__}: {e}")]
 
     return None
