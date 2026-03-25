@@ -34,6 +34,18 @@ TOOL_DEFINITIONS: List[Tool] = [
         },
     ),
     Tool(
+        name="create_category",
+        description="Create a new category channel",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string", "description": "Discord server ID"},
+                "name": {"type": "string", "description": "Category name"},
+            },
+            "required": ["server_id", "name"],
+        },
+    ),
+    Tool(
         name="create_text_channel",
         description="Create a new text channel",
         inputSchema={
@@ -119,6 +131,14 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             return [TextContent(type="text", text=f"Audit Log (Last {len(entries)} entries):\n" + "\n".join(entries))]
         except Exception as e:
             return [TextContent(type="text", text=f"Error fetching audit log: {e}")]
+
+    if name == "create_category":
+        guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+        category = await guild.create_category(
+            name=arguments["name"],
+            reason="Category created via MCP",
+        )
+        return [TextContent(type="text", text=f"Created category '{category.name}' (ID: {category.id})")]
 
     if name == "create_text_channel":
         guild = await discord_client.fetch_guild(int(arguments["server_id"]))
