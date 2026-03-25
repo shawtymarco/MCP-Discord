@@ -35,7 +35,7 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
     if name == "moderate_message":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         message = await channel.fetch_message(int(arguments["message_id"]))
-        await message.delete(reason=arguments["reason"])
+        await message.delete()
 
         if arguments.get("timeout_minutes", 0) > 0 and isinstance(message.author, discord.Member):
             await message.author.timeout(
