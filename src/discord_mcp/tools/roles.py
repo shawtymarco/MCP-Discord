@@ -47,18 +47,21 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
         if not guild:
             guild = await discord_client.fetch_guild(int(arguments["server_id"]))
 
+        # Force-fetch all roles to populate cache
+        all_roles = await guild.fetch_roles()
+        role_map = {r.id: r for r in all_roles}
+
         positions = arguments["positions"]
 
-        # Build the list of (role, new_position) tuples
-        role_positions: list[tuple[Any, int]] = []
+        role_positions: dict[Any, int] = {}
         not_found: list[str] = []
 
         for entry in positions:
-            role = guild.get_role(int(entry["role_id"]))
+            role = role_map.get(int(entry["role_id"]))
             if not role:
                 not_found.append(entry["role_id"])
                 continue
-            role_positions.append((role, int(entry["position"])))
+            role_positions[role] = int(entry["position"])
 
         if not_found:
             return [TextContent(
@@ -72,7 +75,7 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
         )
 
         result_lines = [f"Role positions updated in '{guild.name}':"]
-        for role, pos in role_positions:
+        for role, pos in role_positions.items():
             result_lines.append(f"  {role.name} (ID: {role.id}) → position {pos}")
 
         return [TextContent(type="text", text="\n".join(result_lines))]
