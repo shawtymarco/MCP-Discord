@@ -67,7 +67,7 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             )]
 
         await guild.edit_role_positions(
-            positions={role: pos for role, pos in role_positions},
+            positions=role_positions,
             reason="Role positions updated via MCP",
         )
 
