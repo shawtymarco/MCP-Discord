@@ -191,10 +191,14 @@ async def handle(name: str, arguments: Any) -> List[TextContent]:
         guild = await discord_client.fetch_guild(int(arguments["server_id"]))
         channel = guild.get_channel(int(arguments["channel_id"]))
         if not channel:
+            channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
+        if not channel:
             return [TextContent(type="text", text="Channel not found")]
         kwargs = {}
         if "category_id" in arguments:
             cat = guild.get_channel(int(arguments["category_id"]))
+            if not cat:
+                cat = await discord_client.fetch_channel(int(arguments["category_id"]))
             kwargs["category"] = cat
         if "position" in arguments:
             kwargs["position"] = int(arguments["position"])
