@@ -338,6 +338,25 @@ async def list_tools() -> List["Tool"]:
                 "required": ["channel_id"]
             }
         ),
+        Tool(
+            name="read_thread_messages",
+            description="Read recent messages from a thread attached to a message",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "thread_id": {
+                        "type": "string",
+                        "description": "Discord thread ID (same as the message ID that started the thread)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Number of messages to fetch (max 1000)",
+                        "default": 50
+                    }
+                },
+                "required": ["thread_id"]
+            }
+        ),
         
         # Reaction Tools
         Tool(
@@ -483,6 +502,15 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                         emoji_data["is_custom"] = False
                     reactions.append(emoji_data)
 
+                thread_info = None
+                if hasattr(message, "thread") and message.thread is not None:
+                    thread_info = {
+                        "id": str(message.thread.id),
+                        "name": message.thread.name,
+                        "message_count": message.thread.message_count,
+                        "archived": message.thread.archived,
+                    }
+
                 msg_data = {
                     "id": str(message.id),
                     "author": str(message.author),
@@ -491,7 +519,8 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                     "type": str(message.type),
                     "attachments": [str(a.url) for a in message.attachments],
                     "reactions": reactions,
-                    "embeds": []
+                    "embeds": [],
+                    "thread": thread_info,
                 }
 
                 for embed in message.embeds:
@@ -509,6 +538,7 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         output = [f"Retrieved {len(messages)} messages:"]
         for m in messages:
             msg_text = f"{m['author']} ({m['timestamp']}): {m['content']}"
+            msg_text += f"\n  ID: {m['id']}"
             if m['reactions']:
                 reaction_parts = []
                 for r in m['reactions']:
@@ -535,6 +565,10 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
                                     msg_text += f"\n      Field: {f['name']} = {f['value']}"
             if m['attachments']:
                 msg_text += f"\n  Attachments: {', '.join(m['attachments'])}"
+            if m.get('thread'):
+                t = m['thread']
+                archived = " [archived]" if t['archived'] else ""
+                msg_text += f"\n  Thread: {t['name']} (ID: {t['id']}, Messages: {t['message_count']}{archived})"
             msg_text += f"\n  Type: {m['type']}"
             output.append(msg_text)
 
@@ -819,6 +853,72 @@ async def call_tool(name: str, arguments: Any) -> List[TextContent]:
         )]
 
     # Message Reaction Tools
+    elif name == "read_thread_messages":
+        thread = await discord_client.fetch_channel(int(arguments["thread_id"]))
+        if not isinstance(thread, discord.Thread):
+            return [TextContent(type="text", text=f"Error: Channel {arguments['thread_id']} is not a thread.")]
+
+        limit = min(int(arguments.get("limit", 50)), 1000)
+        messages = []
+        batch_size = 100
+        last_message_id = None
+        remaining = limit
+
+        while remaining > 0:
+            fetch_count = min(remaining, batch_size)
+            kwargs = {"limit": fetch_count}
+            if last_message_id:
+                kwargs["before"] = discord.Object(id=last_message_id)
+
+            batch = []
+            async for message in thread.history(**kwargs):
+                batch.append(message)
+
+            if not batch:
+                break
+
+            last_message_id = batch[-1].id
+            remaining -= len(batch)
+
+            for message in batch:
+                reactions = []
+                for reaction in message.reactions:
+                    emoji_data = {"emoji": str(reaction.emoji), "count": reaction.count}
+                    if isinstance(reaction.emoji, (discord.PartialEmoji, discord.Emoji)):
+                        emoji_data["is_custom"] = True
+                        emoji_data["emoji_id"] = str(reaction.emoji.id) if reaction.emoji.id else None
+                        emoji_data["emoji_name"] = reaction.emoji.name
+                    else:
+                        emoji_data["is_custom"] = False
+                    reactions.append(emoji_data)
+
+                messages.append({
+                    "id": str(message.id),
+                    "author": str(message.author),
+                    "content": message.content,
+                    "timestamp": format_dt(message.created_at),
+                    "attachments": [str(a.url) for a in message.attachments],
+                    "reactions": reactions,
+                })
+
+        output = [f"Thread: {thread.name} (ID: {thread.id}) — Retrieved {len(messages)} messages:"]
+        for m in messages:
+            msg_text = f"{m['author']} ({m['timestamp']}): {m['content']}"
+            msg_text += f"\n  ID: {m['id']}"
+            if m['reactions']:
+                reaction_parts = []
+                for r in m['reactions']:
+                    if r.get('is_custom'):
+                        reaction_parts.append(f":{r['emoji_name']}: (ID: {r['emoji_id']}, Count: {r['count']})")
+                    else:
+                        reaction_parts.append(f"{r['emoji']} ({r['count']})")
+                msg_text += f"\n  Reactions: {', '.join(reaction_parts)}"
+            if m['attachments']:
+                msg_text += f"\n  Attachments: {', '.join(m['attachments'])}"
+            output.append(msg_text)
+
+        return [TextContent(type="text", text="\n\n".join(output))]
+
     elif name == "add_reaction":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         message = await channel.fetch_message(int(arguments["message_id"]))
