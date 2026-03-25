@@ -60,6 +60,20 @@ TOOL_DEFINITIONS: List[Tool] = [
         },
     ),
     Tool(
+        name="create_voice_channel",
+        description="Create a new voice channel",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string", "description": "Discord server ID"},
+                "name": {"type": "string", "description": "Channel name"},
+                "category_id": {"type": "string", "description": "Optional category ID to place channel in"},
+                "user_limit": {"type": "number", "description": "Optional user limit (0 = unlimited)"},
+            },
+            "required": ["server_id", "name"],
+        },
+    ),
+    Tool(
         name="delete_channel",
         description="Delete a channel",
         inputSchema={
@@ -152,6 +166,19 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             reason="Channel created via MCP",
         )
         return [TextContent(type="text", text=f"Created text channel #{channel.name} (ID: {channel.id})")]
+
+    if name == "create_voice_channel":
+        guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+        category = None
+        if "category_id" in arguments:
+            category = guild.get_channel(int(arguments["category_id"]))
+        channel = await guild.create_voice_channel(
+            name=arguments["name"],
+            category=category,
+            user_limit=int(arguments.get("user_limit", 0)),
+            reason="Voice channel created via MCP",
+        )
+        return [TextContent(type="text", text=f"Created voice channel #{channel.name} (ID: {channel.id})")]
 
     if name == "delete_channel":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
