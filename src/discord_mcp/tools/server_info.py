@@ -86,6 +86,20 @@ TOOL_DEFINITIONS: List[Tool] = [
             "required": ["channel_id", "name"],
         },
     ),
+    Tool(
+        name="move_channel",
+        description="Move a channel to a different category or position",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string", "description": "Discord server ID"},
+                "channel_id": {"type": "string", "description": "Channel ID to move"},
+                "category_id": {"type": "string", "description": "Target category ID (optional)"},
+                "position": {"type": "number", "description": "Position within category (optional, 0 = top)"},
+            },
+            "required": ["server_id", "channel_id"],
+        },
+    ),
 ]
 
 
@@ -172,5 +186,19 @@ async def handle(name: str, arguments: Any) -> List[TextContent]:
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         await channel.edit(name=arguments["name"])
         return [TextContent(type="text", text=f"Renamed channel to '{arguments['name']}' (ID: {channel.id})")]
+
+    if name == "move_channel":
+        guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+        channel = guild.get_channel(int(arguments["channel_id"]))
+        if not channel:
+            return [TextContent(type="text", text="Channel not found")]
+        kwargs = {}
+        if "category_id" in arguments:
+            cat = guild.get_channel(int(arguments["category_id"]))
+            kwargs["category"] = cat
+        if "position" in arguments:
+            kwargs["position"] = int(arguments["position"])
+        await channel.edit(**kwargs)
+        return [TextContent(type="text", text=f"Moved channel '{channel.name}' (ID: {channel.id})")]
 
     return None
