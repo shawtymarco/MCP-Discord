@@ -24,6 +24,23 @@ TOOL_DEFINITIONS: List[Tool] = [
         },
     ),
     Tool(
+        name="bulk_delete_messages",
+        description="Delete multiple messages at once from a channel (max 100, must be under 14 days old)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string", "description": "Channel ID containing the messages"},
+                "message_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of message IDs to delete",
+                },
+                "reason": {"type": "string", "description": "Reason for deletion"},
+            },
+            "required": ["channel_id", "message_ids", "reason"],
+        },
+    ),
+    Tool(
         name="test_reload",
         description="A test tool to verify if the MCP server has reloaded.",
         inputSchema={"type": "object", "properties": {}},
@@ -45,6 +62,13 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             return [TextContent(type="text", text=f"Message deleted and user timed out for {arguments['timeout_minutes']} minutes.")]
 
         return [TextContent(type="text", text="Message deleted successfully.")]
+
+    if name == "bulk_delete_messages":
+        channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
+        message_ids = [int(mid) for mid in arguments["message_ids"]]
+        messages = [discord.Object(id=mid) for mid in message_ids]
+        await channel.delete_messages(messages, reason=arguments.get("reason", "Bulk delete"))
+        return [TextContent(type="text", text=f"Deleted {len(message_ids)} messages.")]
 
     if name == "test_reload":
         return [TextContent(type="text", text="MCP server is running.")]
