@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import base64
 from typing import Any, List
 
+import aiohttp
 import discord
-from mcp.types import TextContent, Tool
+from mcp.types import ImageContent, TextContent, Tool
 
 from discord_mcp.client import discord_client, format_dt
+
+MAX_IMAGE_ATTACHMENT_BYTES = 8 * 1024 * 1024
+DEFAULT_IMAGE_ATTACHMENT_LIMIT = 10
 
 TOOL_DEFINITIONS: List[Tool] = [
     Tool(
@@ -28,6 +33,16 @@ TOOL_DEFINITIONS: List[Tool] = [
             "properties": {
                 "channel_id": {"type": "string", "description": "Discord channel ID"},
                 "limit": {"type": "number", "description": "Number of messages to fetch (max 1000)", "default": 50},
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Include image attachments as MCP image content so vision-capable clients can inspect them.",
+                    "default": False,
+                },
+                "image_limit": {
+                    "type": "number",
+                    "description": "Maximum number of image attachments to include when include_image_data is true.",
+                    "default": DEFAULT_IMAGE_ATTACHMENT_LIMIT,
+                },
             },
             "required": ["channel_id"],
         },
@@ -40,6 +55,16 @@ TOOL_DEFINITIONS: List[Tool] = [
             "properties": {
                 "thread_id": {"type": "string", "description": "Discord thread ID (same as the message ID that started the thread)"},
                 "limit": {"type": "number", "description": "Number of messages to fetch (max 1000)", "default": 50},
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Include image attachments as MCP image content so vision-capable clients can inspect them.",
+                    "default": False,
+                },
+                "image_limit": {
+                    "type": "number",
+                    "description": "Maximum number of image attachments to include when include_image_data is true.",
+                    "default": DEFAULT_IMAGE_ATTACHMENT_LIMIT,
+                },
             },
             "required": ["thread_id"],
         },
@@ -95,7 +120,75 @@ async def _fetch_messages(channel, limit: int) -> list:
     return messages
 
 
-async def handle(name: str, arguments: Any) -> List[TextContent] | None:
+def _is_image_attachment(attachment: discord.Attachment) -> bool:
+    content_type = attachment.content_type or ""
+    return content_type.startswith("image/")
+
+
+def _format_attachments(attachments: list[discord.Attachment]) -> str:
+    parts = []
+    for attachment in attachments:
+        details = []
+        if attachment.content_type:
+            details.append(f"type={attachment.content_type}")
+        if attachment.size:
+            details.append(f"size={attachment.size} bytes")
+        suffix = f" ({', '.join(details)})" if details else ""
+        parts.append(f"{attachment.url}{suffix}")
+    return ", ".join(parts)
+
+
+async def _download_image_attachment(attachment: discord.Attachment) -> ImageContent | TextContent:
+    if attachment.size and attachment.size > MAX_IMAGE_ATTACHMENT_BYTES:
+        return TextContent(
+            type="text",
+            text=(
+                f"Skipped image attachment {attachment.filename} ({attachment.url}): "
+                f"{attachment.size} bytes exceeds {MAX_IMAGE_ATTACHMENT_BYTES} byte limit."
+            ),
+        )
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(str(attachment.url)) as response:
+                response.raise_for_status()
+                data = await response.read()
+    except Exception as exc:
+        return TextContent(
+            type="text",
+            text=f"Failed to download image attachment {attachment.filename} ({attachment.url}): {exc}",
+        )
+
+    mime_type = attachment.content_type or "image/png"
+    return ImageContent(type="image", data=base64.b64encode(data).decode("ascii"), mimeType=mime_type)
+
+
+async def _collect_image_contents(messages: list[discord.Message], image_limit: int) -> list[ImageContent | TextContent]:
+    contents: list[ImageContent | TextContent] = []
+    remaining = image_limit
+
+    for message in messages:
+        if remaining <= 0:
+            break
+        for attachment in message.attachments:
+            if remaining <= 0:
+                break
+            if not _is_image_attachment(attachment):
+                continue
+
+            contents.append(
+                TextContent(
+                    type="text",
+                    text=f"Image attachment from message {message.id}: {attachment.filename} ({attachment.url})",
+                )
+            )
+            contents.append(await _download_image_attachment(attachment))
+            remaining -= 1
+
+    return contents
+
+
+async def handle(name: str, arguments: Any) -> List[TextContent | ImageContent] | None:
     if name == "send_message":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         message = await channel.send(arguments["content"])
@@ -104,6 +197,8 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
     if name == "read_messages":
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         limit = min(int(arguments.get("limit", 50)), 1000)
+        include_image_data = bool(arguments.get("include_image_data", False))
+        image_limit = max(0, min(int(arguments.get("image_limit", DEFAULT_IMAGE_ATTACHMENT_LIMIT)), 50))
         raw_messages = await _fetch_messages(channel, limit)
 
         output = [f"Retrieved {len(raw_messages)} messages:"]
@@ -130,7 +225,7 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
                     msg_text += f"\n    Field: {field.name} = {field.value}"
 
             if message.attachments:
-                msg_text += f"\n  Attachments: {', '.join(str(a.url) for a in message.attachments)}"
+                msg_text += f"\n  Attachments: {_format_attachments(message.attachments)}"
 
             if thread_info:
                 archived = " [archived]" if thread_info["archived"] else ""
@@ -139,7 +234,10 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             msg_text += f"\n  Type: {message.type}"
             output.append(msg_text)
 
-        return [TextContent(type="text", text="\n\n".join(output))]
+        contents: list[TextContent | ImageContent] = [TextContent(type="text", text="\n\n".join(output))]
+        if include_image_data and image_limit > 0:
+            contents.extend(await _collect_image_contents(raw_messages, image_limit))
+        return contents
 
     if name == "read_thread_messages":
         thread = await discord_client.fetch_channel(int(arguments["thread_id"]))
@@ -147,6 +245,8 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             return [TextContent(type="text", text=f"Error: Channel {arguments['thread_id']} is not a thread.")]
 
         limit = min(int(arguments.get("limit", 50)), 1000)
+        include_image_data = bool(arguments.get("include_image_data", False))
+        image_limit = max(0, min(int(arguments.get("image_limit", DEFAULT_IMAGE_ATTACHMENT_LIMIT)), 50))
         raw_messages = await _fetch_messages(thread, limit)
 
         output = [f"Thread: {thread.name} (ID: {thread.id}) — Retrieved {len(raw_messages)} messages:"]
@@ -157,9 +257,12 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
             if reactions:
                 msg_text += f"\n  Reactions: {_format_reactions(reactions)}"
             if message.attachments:
-                msg_text += f"\n  Attachments: {', '.join(str(a.url) for a in message.attachments)}"
+                msg_text += f"\n  Attachments: {_format_attachments(message.attachments)}"
             output.append(msg_text)
 
-        return [TextContent(type="text", text="\n\n".join(output))]
+        contents: list[TextContent | ImageContent] = [TextContent(type="text", text="\n\n".join(output))]
+        if include_image_data and image_limit > 0:
+            contents.extend(await _collect_image_contents(raw_messages, image_limit))
+        return contents
 
     return None

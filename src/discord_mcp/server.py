@@ -6,7 +6,7 @@ import io
 from typing import Any, List
 
 from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import ImageContent, Tool, TextContent
 from mcp.server.stdio import stdio_server
 
 from discord_mcp.client import discord_client, DISCORD_TOKEN, require_discord_client
@@ -31,7 +31,7 @@ async def list_tools() -> List[Tool]:
 
 @app.call_tool()
 @require_discord_client
-async def call_tool(name: str, arguments: Any) -> List[TextContent]:
+async def call_tool(name: str, arguments: Any) -> List[TextContent | ImageContent]:
     return await route_tool(name, arguments)
 
 

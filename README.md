@@ -7,6 +7,7 @@ This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-dis
 ## ✨ Recent Updates
 
 - **v1.4.0** (2026-03-25): Added `read_thread_messages` tool to read messages inside threads. `read_messages` now includes message ID (for link generation) and thread metadata when a thread is attached to a message.
+- **v1.4.1** (2026-05-20): Added optional image attachment content for `read_messages` and `read_thread_messages` via `include_image_data`.
 - **v1.3.0** (2026-03-05): Enhanced `read_messages` with reaction information including custom emoji details (ID, name, animated status).
 - **v1.2.0** (2026-02-05): Added support for reading forwarded messages (Message Snapshots) and detailed embed information (titles, fields, descriptions) in `read_messages`.
 - **v1.1.0** (2026-02-04): Updated MCP SDK to v1.0.0+ to resolve `Resource` import errors and improve compatibility with latest MCP clients
@@ -32,6 +33,7 @@ This project is a fork of [hanweg/mcp-discord](https://github.com/hanweg/mcp-dis
 - `send_message`: Send a message to a channel.
 - `read_messages`: Read recent history, reactions (including custom emoji details), embeds, message ID, and thread metadata.
 - `read_thread_messages`: Read messages inside a thread by thread ID.
+- `read_messages` / `read_thread_messages` can include image attachments as MCP image content with `include_image_data: true` and optional `image_limit`.
 - `add_reaction` / `remove_reaction`: Manage message reactions.
 - `moderate_message`: Delete messages and timeout users.
 

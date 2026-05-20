@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
-from mcp.types import TextContent, Tool
+from mcp.types import ImageContent, TextContent, Tool
 
 from discord_mcp.tools import channels, members, messages, moderation, reactions, roles, server_info
 
@@ -19,7 +19,7 @@ ALL_TOOLS: List[Tool] = (
 _MODULES = [server_info, members, channels, messages, reactions, moderation, roles]
 
 
-async def route_tool(name: str, arguments: Any) -> List[TextContent]:
+async def route_tool(name: str, arguments: Any) -> List[TextContent | ImageContent]:
     for module in _MODULES:
         result = await module.handle(name, arguments)
         if result is not None:
