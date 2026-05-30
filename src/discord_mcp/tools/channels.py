@@ -85,7 +85,75 @@ TOOL_DEFINITIONS: List[Tool] = [
             "required": ["channel_id"],
         },
     ),
+    Tool(
+        name="set_channel_role_overwrite",
+        description=(
+            "Set permission overwrites for a role on a channel. "
+            "Only permissions listed in allow, deny, or neutral are changed; other overwrite values are preserved."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string", "description": "Discord server (guild) ID"},
+                "channel_id": {"type": "string", "description": "Discord channel ID"},
+                "role_id": {"type": "string", "description": "Discord role ID"},
+                "allow": {
+                    "type": "array",
+                    "description": "Permission names to explicitly allow, e.g. ['view_channel']",
+                    "items": {"type": "string"},
+                },
+                "deny": {
+                    "type": "array",
+                    "description": "Permission names to explicitly deny, e.g. ['view_channel']",
+                    "items": {"type": "string"},
+                },
+                "neutral": {
+                    "type": "array",
+                    "description": "Permission names to clear from this overwrite",
+                    "items": {"type": "string"},
+                },
+                "reason": {"type": "string", "description": "Optional audit log reason"},
+            },
+            "required": ["server_id", "channel_id", "role_id"],
+        },
+    ),
+    Tool(
+        name="set_role_channel_visibility",
+        description=(
+            "Restrict a role's channel visibility across a server by setting view_channel overwrites. "
+            "Channels in visible_channel_ids are allowed; every other channel is denied."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "server_id": {"type": "string", "description": "Discord server (guild) ID"},
+                "role_id": {"type": "string", "description": "Discord role ID"},
+                "visible_channel_ids": {
+                    "type": "array",
+                    "description": "Channel IDs the role should be able to see",
+                    "items": {"type": "string"},
+                },
+                "reason": {"type": "string", "description": "Optional audit log reason"},
+            },
+            "required": ["server_id", "role_id", "visible_channel_ids"],
+        },
+    ),
 ]
+
+
+def _validate_permissions(permission_names: list[str]) -> None:
+    invalid = sorted(set(permission_names) - set(discord.Permissions.VALID_FLAGS))
+    if invalid:
+        raise ValueError(f"Invalid permission name(s): {', '.join(invalid)}")
+
+
+def _format_overwrite(overwrite: discord.PermissionOverwrite) -> str:
+    allowed = [perm for perm, value in overwrite if value is True]
+    denied = [perm for perm, value in overwrite if value is False]
+    return (
+        f"Allowed: {', '.join(allowed) or 'None'}\n"
+        f"Denied: {', '.join(denied) or 'None'}"
+    )
 
 
 async def handle(name: str, arguments: Any) -> List[TextContent] | None:
@@ -184,5 +252,80 @@ async def handle(name: str, arguments: Any) -> List[TextContent] | None:
         channel = await discord_client.fetch_channel(int(arguments["channel_id"]))
         await channel.delete(reason=arguments.get("reason", "Channel deleted via MCP"))
         return [TextContent(type="text", text="Deleted channel successfully")]
+
+    if name == "set_channel_role_overwrite":
+        try:
+            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            channel = await guild.fetch_channel(int(arguments["channel_id"]))
+            role = guild.get_role(int(arguments["role_id"]))
+            if role is None:
+                roles = await guild.fetch_roles()
+                role = next((r for r in roles if r.id == int(arguments["role_id"])), None)
+            if role is None:
+                return [TextContent(type="text", text=f"Role not found: {arguments['role_id']}")]
+
+            allow = list(arguments.get("allow", []))
+            deny = list(arguments.get("deny", []))
+            neutral = list(arguments.get("neutral", []))
+            _validate_permissions(allow + deny + neutral)
+
+            overwrite = channel.overwrites_for(role)
+            for permission in allow:
+                setattr(overwrite, permission, True)
+            for permission in deny:
+                setattr(overwrite, permission, False)
+            for permission in neutral:
+                setattr(overwrite, permission, None)
+
+            await channel.set_permissions(
+                role,
+                overwrite=overwrite,
+                reason=arguments.get("reason", "Channel role overwrite updated via MCP"),
+            )
+            return [TextContent(
+                type="text",
+                text=(
+                    f"Updated overwrites for role '{role.name}' on #{channel.name}.\n"
+                    f"{_format_overwrite(overwrite)}"
+                ),
+            )]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error updating channel role overwrite: {type(e).__name__}: {e}")]
+
+    if name == "set_role_channel_visibility":
+        try:
+            guild = await discord_client.fetch_guild(int(arguments["server_id"]))
+            role = guild.get_role(int(arguments["role_id"]))
+            if role is None:
+                roles = await guild.fetch_roles()
+                role = next((r for r in roles if r.id == int(arguments["role_id"])), None)
+            if role is None:
+                return [TextContent(type="text", text=f"Role not found: {arguments['role_id']}")]
+
+            visible_channel_ids = {int(channel_id) for channel_id in arguments["visible_channel_ids"]}
+            channels = await guild.fetch_channels()
+            updated = []
+            for channel in channels:
+                overwrite = channel.overwrites_for(role)
+                should_show = channel.id in visible_channel_ids
+                if overwrite.view_channel is should_show:
+                    continue
+                overwrite.view_channel = should_show
+                await channel.set_permissions(
+                    role,
+                    overwrite=overwrite,
+                    reason=arguments.get("reason", "Role channel visibility updated via MCP"),
+                )
+                updated.append(f"#{channel.name}: {'allowed' if should_show else 'denied'}")
+
+            return [TextContent(
+                type="text",
+                text=(
+                    f"Updated channel visibility for role '{role.name}' in '{guild.name}'.\n"
+                    + ("\n".join(updated) if updated else "No changes needed.")
+                ),
+            )]
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error updating role channel visibility: {type(e).__name__}: {e}")]
 
     return None
